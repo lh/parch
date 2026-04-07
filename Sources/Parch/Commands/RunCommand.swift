@@ -18,6 +18,9 @@ struct Run: AsyncParsableCommand {
     @Option(name: .shortAndLong, help: "Number of parallel workers")
     var workers: Int = 2
 
+    @Option(name: .long, help: "Conda environment containing marker-pdf")
+    var condaEnv: String = "marker"
+
     mutating func run() async throws {
         let logger = makeLogger(level: verbose ? .debug : .info)
         let db = try ParchDatabase(logger: logger)
@@ -33,7 +36,7 @@ struct Run: AsyncParsableCommand {
         }
 
         // Phase 2: convert
-        let converter = Converter(logger: logger)
+        let converter = Converter(condaEnv: condaEnv, logger: logger)
         let orchestrator = Orchestrator(db: db, converter: converter, logger: logger, maxWorkers: workers)
         print("Converting pending PDFs (limit: \(limit), workers: \(workers))...")
         let convertResult = await orchestrator.convertPending(limit: limit)

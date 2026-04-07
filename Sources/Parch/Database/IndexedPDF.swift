@@ -45,6 +45,15 @@ extension IndexedPDF {
             .fetchAll(db)
     }
 
+    static func fetchPendingByPrefix(_ prefix: String, db: Database, limit: Int = 100) throws -> [IndexedPDF] {
+        try IndexedPDF
+            .filter(Column("conversion_status") == ConversionStatus.pending.rawValue)
+            .filter(Column("file_path").like("\(prefix)%"))
+            .order(Column("indexed_at").asc)
+            .limit(limit)
+            .fetchAll(db)
+    }
+
     static func fetchFailed(db: Database) throws -> [IndexedPDF] {
         try IndexedPDF
             .filter(Column("conversion_status") == ConversionStatus.failed.rawValue)

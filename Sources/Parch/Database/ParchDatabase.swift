@@ -32,9 +32,13 @@ final class ParchDatabase: Sendable {
         }
     }
 
-    func fetchPending(limit: Int = 100) throws -> [IndexedPDF] {
+    func fetchPending(limit: Int = 100, pathPrefix: String? = nil) throws -> [IndexedPDF] {
         try dbQueue.read { db in
-            try IndexedPDF.fetchPending(db: db, limit: limit)
+            if let prefix = pathPrefix {
+                try IndexedPDF.fetchPendingByPrefix(prefix, db: db, limit: limit)
+            } else {
+                try IndexedPDF.fetchPending(db: db, limit: limit)
+            }
         }
     }
 

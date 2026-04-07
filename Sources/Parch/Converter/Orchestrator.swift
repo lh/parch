@@ -21,12 +21,12 @@ final class Orchestrator: Sendable {
         self.maxWorkers = maxWorkers
     }
 
-    func convertPending(limit: Int = 100) async -> ConvertResult {
+    func convertPending(limit: Int = 100, pathPrefix: String? = nil) async -> ConvertResult {
         var result = ConvertResult()
 
         let pending: [IndexedPDF]
         do {
-            pending = try db.fetchPending(limit: limit)
+            pending = try db.fetchPending(limit: limit, pathPrefix: pathPrefix)
         } catch {
             logger.error("Failed to fetch pending PDFs: \(error)")
             return result
@@ -137,8 +137,8 @@ final class Orchestrator: Sendable {
             let reason: String
             if let convError = error as? ConversionError {
                 switch convError {
-                case .markerNotFound(let p):
-                    reason = "marker_single not found at \(p)"
+                case .condaNotFound(let p):
+                    reason = "conda not found at \(p)"
                 case .markerFailed(let code, let stderr):
                     reason = "marker exited \(code): \(stderr)"
                 case .outputNotCreated(let p):

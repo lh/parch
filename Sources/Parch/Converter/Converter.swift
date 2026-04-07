@@ -2,28 +2,29 @@ import Foundation
 import Logging
 
 enum ConversionError: Error {
-    case markerNotFound(String)
+    case condaNotFound(String)
     case markerFailed(exitCode: Int32, stderr: String)
     case outputNotCreated(String)
 }
 
 final class Converter: Sendable {
-    private let markerPath: String
+    private let condaPath: String
+    private let condaEnv: String
     private let logger: Logger
 
-    init(logger: Logger) {
-        // Resolve marker_single location
-        self.markerPath = Self.findMarker()
+    init(condaEnv: String = "marker", logger: Logger) {
+        self.condaPath = Self.findConda()
+        self.condaEnv = condaEnv
         self.logger = logger
     }
 
-    /// Convert a single PDF to markdown using marker_single.
+    /// Convert a single PDF to markdown using marker_single via conda.
     /// Returns the path to the output directory.
     func convert(pdfPath: String) throws -> String {
         let outputDir = ScanRules.outputDirectory(forPDF: pdfPath)
 
-        guard FileManager.default.fileExists(atPath: markerPath) else {
-            throw ConversionError.markerNotFound(markerPath)
+        guard FileManager.default.fileExists(atPath: condaPath) else {
+            throw ConversionError.condaNotFound(condaPath)
         }
 
         // marker_single writes into a subdirectory of --output_dir named after the PDF stem.
@@ -34,15 +35,14 @@ final class Converter: Sendable {
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/nice")
-        process.arguments = ["-n", "20", markerPath, pdfPath, "--output_dir", parentDir]
+        process.arguments = [
+            "-n", "20",
+            condaPath, "run", "-n", condaEnv,
+            "marker_single", pdfPath, "--output_dir", parentDir,
+        ]
         process.qualityOfService = .background
         process.standardOutput = FileHandle.nullDevice
         process.standardError = stderrPipe
-
-        // Force CPU to avoid MPS/Metal bugs in surya-ocr
-        var env = ProcessInfo.processInfo.environment
-        env["TORCH_DEVICE"] = "cpu"
-        process.environment = env
 
         try process.run()
         let stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
@@ -101,14 +101,18 @@ final class Converter: Sendable {
         logger.info("Symlinked \(linkDir) -> \(canonicalOutputDir)")
     }
 
-    // MARK: - Marker discovery
+    // MARK: - Conda discovery
 
-    private static func findMarker() -> String {
+    private static func findConda() -> String {
         let candidates = [
+            "/opt/homebrew/bin/conda",
+            "/usr/local/bin/conda",
             FileManager.default.homeDirectoryForCurrentUser
-                .appendingPathComponent(".local/bin/marker_single").path,
-            "/usr/local/bin/marker_single",
-            "/opt/homebrew/bin/marker_single",
+                .appendingPathComponent("miniforge3/bin/conda").path,
+            FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent("miniconda3/bin/conda").path,
+            FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent("anaconda3/bin/conda").path,
         ]
         for path in candidates {
             if FileManager.default.fileExists(atPath: path) {

@@ -15,17 +15,27 @@ struct Convert: AsyncParsableCommand {
     @Option(name: .shortAndLong, help: "Number of parallel workers")
     var workers: Int = 2
 
+    @Option(name: .long, help: "Conda environment containing marker-pdf")
+    var condaEnv: String = "marker"
+
+    @Option(name: .long, help: "Only convert PDFs under this directory")
+    var path: String?
+
     mutating func run() async throws {
         let logger = makeLogger(level: verbose ? .debug : .info)
         let db = try ParchDatabase(logger: logger)
-        let converter = Converter(logger: logger)
+        let converter = Converter(condaEnv: condaEnv, logger: logger)
         let orchestrator = Orchestrator(db: db, converter: converter, logger: logger, maxWorkers: workers)
 
         let counts = try db.countByStatus()
         let pending = counts[.pending] ?? 0
-        print("Converting (up to \(limit) of \(pending) pending, \(workers) workers)...")
+        if let path {
+            print("Converting (up to \(limit) under \(path), \(workers) workers)...")
+        } else {
+            print("Converting (up to \(limit) of \(pending) pending, \(workers) workers)...")
+        }
 
-        let result = await orchestrator.convertPending(limit: limit)
+        let result = await orchestrator.convertPending(limit: limit, pathPrefix: path)
         print("Done: \(result.converted) converted, \(result.deduplicated) deduped, \(result.failed) failed, \(result.skipped) skipped")
     }
 }
