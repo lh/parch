@@ -7,3 +7,4 @@ DerivedData/
 *.o
 *.swp
 *~
+.claude/
