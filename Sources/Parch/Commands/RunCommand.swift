@@ -1,4 +1,5 @@
 import ArgumentParser
+import Foundation
 import Logging
 
 struct Run: AsyncParsableCommand {
@@ -24,7 +25,10 @@ struct Run: AsyncParsableCommand {
     @Option(name: .long, parsing: .upToNextOption, help: "Directories to scan (default: ~/Documents ~/Code)")
     var root: [String] = []
 
+    private static let maxLogSize: UInt64 = 5 * 1024 * 1024 // 5 MB
+
     mutating func run() async throws {
+        Self.rotateLogIfNeeded()
         let logger = makeLogger(level: verbose ? .debug : .info)
         let db = try ParchDatabase(logger: logger)
 
@@ -45,5 +49,22 @@ struct Run: AsyncParsableCommand {
         print("Converting pending PDFs (limit: \(limit), workers: \(workers))...")
         let convertResult = await orchestrator.convertPending(limit: limit)
         print("Convert: \(convertResult.converted) done, \(convertResult.deduplicated) deduped, \(convertResult.failed) failed, \(convertResult.skipped) skipped")
+    }
+
+    // MARK: - Log rotation
+
+    private static func rotateLogIfNeeded() {
+        let logPath = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".parch/parch.log")
+        let prevPath = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".parch/parch.log.1")
+
+        guard let attrs = try? FileManager.default.attributesOfItem(atPath: logPath.path),
+              let size = attrs[.size] as? UInt64,
+              size > maxLogSize else { return }
+
+        let fm = FileManager.default
+        try? fm.removeItem(at: prevPath)
+        try? fm.moveItem(at: logPath, to: prevPath)
     }
 }
