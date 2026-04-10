@@ -3,12 +3,10 @@ import Foundation
 enum ScanRules {
     private static let home = FileManager.default.homeDirectoryForCurrentUser.path
 
-    static var scanRoots: [String] {
+    static var defaultScanRoots: [String] {
         [
-            home,
-            home + "/Library/CloudStorage",
-            home + "/Library/Mobile Documents",
-            "/Volumes",
+            home + "/Documents",
+            home + "/Code",
         ]
     }
 

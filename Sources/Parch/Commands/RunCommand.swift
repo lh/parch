@@ -21,12 +21,16 @@ struct Run: AsyncParsableCommand {
     @Option(name: .long, help: "Conda environment containing marker-pdf")
     var condaEnv: String = "marker"
 
+    @Option(name: .long, parsing: .upToNextOption, help: "Directories to scan (default: ~/Documents ~/Code)")
+    var root: [String] = []
+
     mutating func run() async throws {
         let logger = makeLogger(level: verbose ? .debug : .info)
         let db = try ParchDatabase(logger: logger)
 
         // Phase 1: scan
-        let scanner = Scanner(db: db, logger: logger)
+        let roots = root.isEmpty ? nil : root
+        let scanner = Scanner(db: db, scanRoots: roots, logger: logger)
         print("Scanning for PDFs...")
         let scanResult = try scanner.scan()
         print("Scan: \(scanResult.discovered) found, \(scanResult.new) new, \(scanResult.updated) updated")

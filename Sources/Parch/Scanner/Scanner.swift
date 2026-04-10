@@ -10,17 +10,19 @@ struct ScanResult: Sendable {
 
 final class Scanner: Sendable {
     private let db: ParchDatabase
+    private let scanRoots: [String]
     private let logger: Logger
 
-    init(db: ParchDatabase, logger: Logger) {
+    init(db: ParchDatabase, scanRoots: [String]? = nil, logger: Logger) {
         self.db = db
+        self.scanRoots = scanRoots ?? ScanRules.defaultScanRoots
         self.logger = logger
     }
 
     func scan() throws -> ScanResult {
         var result = ScanResult()
 
-        // Phase 1: mdfind for Spotlight-indexed locations
+        // Phase 1: mdfind scoped to scan roots
         let mdfindPaths = try runMdfind()
         logger.info("mdfind returned \(mdfindPaths.count) PDFs")
 
@@ -49,9 +51,15 @@ final class Scanner: Sendable {
     // MARK: - mdfind
 
     private func runMdfind() throws -> [String] {
+        var args: [String] = []
+        for root in scanRoots {
+            args.append(contentsOf: ["-onlyin", root])
+        }
+        args.append("kMDItemFSName == '*.pdf'")
+
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/mdfind")
-        process.arguments = ["kMDItemFSName == '*.pdf'"]
+        process.arguments = args
 
         let pipe = Pipe()
         process.standardOutput = pipe
@@ -78,7 +86,7 @@ final class Scanner: Sendable {
         let fm = FileManager.default
         let keys: [URLResourceKey] = [.isDirectoryKey, .isRegularFileKey, .contentModificationDateKey, .fileSizeKey]
 
-        for root in ScanRules.scanRoots {
+        for root in scanRoots {
             let rootURL = URL(fileURLWithPath: root)
             guard fm.fileExists(atPath: root) else { continue }
 
