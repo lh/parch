@@ -13,7 +13,7 @@ struct Convert: AsyncParsableCommand {
     var limit: Int = 50
 
     @Option(name: .shortAndLong, help: "Number of parallel workers")
-    var workers: Int = 2
+    var workers: Int = 1
 
     @Option(name: .long, help: "Conda environment containing marker-pdf")
     var condaEnv: String = "marker"
