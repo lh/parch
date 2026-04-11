@@ -77,6 +77,7 @@ final class Scanner: Sendable {
             .map(String.init)
             .filter { !ScanRules.shouldSkip(path: $0) }
             .filter { !isInsideNomarkerDirectory($0) }
+            .filter { !ScanRules.hasSourceFile(forPDF: $0) }
     }
 
     // MARK: - Filesystem walk
@@ -119,7 +120,8 @@ final class Scanner: Sendable {
                     continue
                 }
 
-                if ScanRules.isPDF(path) && !known.contains(path) {
+                if ScanRules.isPDF(path) && !known.contains(path)
+                    && !ScanRules.hasSourceFile(forPDF: path) {
                     found.append(path)
                 }
             }

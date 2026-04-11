@@ -58,6 +58,21 @@ enum ScanRules {
         path.lowercased().hasSuffix(".pdf")
     }
 
+    /// Skip PDFs that have a sibling source file -- no point converting
+    /// a PDF back to markdown when the original source is right there.
+    private static let sourceExtensions = ["tex", "md", "markdown", "typ", "rst", "rmd"]
+
+    static func hasSourceFile(forPDF pdfPath: String) -> Bool {
+        let url = URL(fileURLWithPath: pdfPath)
+        let stem = url.deletingPathExtension()
+        for ext in sourceExtensions {
+            if FileManager.default.fileExists(atPath: stem.appendingPathExtension(ext).path) {
+                return true
+            }
+        }
+        return false
+    }
+
     /// The output directory for a given PDF path.
     /// /path/to/report.pdf -> /path/to/report/
     static func outputDirectory(forPDF pdfPath: String) -> String {
