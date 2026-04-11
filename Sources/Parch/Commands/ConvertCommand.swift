@@ -23,6 +23,13 @@ struct Convert: AsyncParsableCommand {
 
     mutating func run() async throws {
         let logger = makeLogger(level: verbose ? .debug : .info)
+
+        guard let lock = ProcessLock.acquire() else {
+            logger.info("Another parch process is running, skipping this invocation")
+            return
+        }
+        _ = lock // hold for lifetime of run
+
         let db = try ParchDatabase(logger: logger)
         let converter = Converter(condaEnv: condaEnv, logger: logger)
         let orchestrator = Orchestrator(db: db, converter: converter, logger: logger, maxWorkers: workers)

@@ -30,6 +30,13 @@ struct Run: AsyncParsableCommand {
     mutating func run() async throws {
         Self.rotateLogIfNeeded()
         let logger = makeLogger(level: verbose ? .debug : .info)
+
+        guard let lock = ProcessLock.acquire() else {
+            logger.info("Another parch process is running, skipping this invocation")
+            return
+        }
+        _ = lock // hold for lifetime of run
+
         let db = try ParchDatabase(logger: logger)
 
         // Phase 1: scan
