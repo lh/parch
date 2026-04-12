@@ -18,6 +18,9 @@ struct Convert: AsyncParsableCommand {
     @Option(name: .long, help: "Conda environment containing marker-pdf")
     var condaEnv: String = "marker"
 
+    @Option(name: .long, help: "Conversion engine: auto, vision, or marker")
+    var engine: EngineChoice = .auto
+
     @Option(name: .long, help: "Only convert PDFs under this directory")
     var path: String?
 
@@ -31,8 +34,8 @@ struct Convert: AsyncParsableCommand {
         _ = lock // hold for lifetime of run
 
         let db = try ParchDatabase(logger: logger)
-        let converter = Converter(condaEnv: condaEnv, logger: logger)
-        let orchestrator = Orchestrator(db: db, converter: converter, logger: logger, maxWorkers: workers)
+        let (primary, fallback) = EngineFactory.make(choice: engine, condaEnv: condaEnv, logger: logger)
+        let orchestrator = Orchestrator(db: db, primaryEngine: primary, fallbackEngine: fallback, logger: logger, maxWorkers: workers)
 
         let counts = try db.countByStatus()
         let pending = counts[.pending] ?? 0

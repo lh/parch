@@ -29,6 +29,12 @@ enum ParchMigrations {
             )
         }
 
+        migrator.registerMigration("v2") { db in
+            try db.alter(table: "indexed_pdf") { t in
+                t.add(column: "engine", .text)
+            }
+        }
+
         return migrator
     }
 }

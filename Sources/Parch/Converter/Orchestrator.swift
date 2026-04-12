@@ -10,13 +10,21 @@ struct ConvertResult: Sendable {
 
 final class Orchestrator: Sendable {
     private let db: ParchDatabase
-    private let converter: Converter
+    private let primaryEngine: ConversionEngine
+    private let fallbackEngine: ConversionEngine?
     private let logger: Logger
     private let maxWorkers: Int
 
-    init(db: ParchDatabase, converter: Converter, logger: Logger, maxWorkers: Int = 2) {
+    init(
+        db: ParchDatabase,
+        primaryEngine: ConversionEngine,
+        fallbackEngine: ConversionEngine? = nil,
+        logger: Logger,
+        maxWorkers: Int = 2
+    ) {
         self.db = db
-        self.converter = converter
+        self.primaryEngine = primaryEngine
+        self.fallbackEngine = fallbackEngine
         self.logger = logger
         self.maxWorkers = maxWorkers
     }
@@ -44,7 +52,6 @@ final class Orchestrator: Sendable {
             var index = 0
 
             while index < pending.count || inFlight > 0 {
-                // Launch workers up to max
                 while inFlight < maxWorkers && index < pending.count {
                     let pdf = pending[index]
                     index += 1
@@ -54,7 +61,6 @@ final class Orchestrator: Sendable {
                     }
                 }
 
-                // Wait for one to complete
                 if let single = await group.next() {
                     inFlight -= 1
                     switch single {
@@ -117,39 +123,82 @@ final class Orchestrator: Sendable {
             if let canonical = existing.first(where: {
                 $0.conversionStatus == .complete && $0.canonicalPath != nil
             }) {
-                // Duplicate - symlink to existing output
                 logger.info("Dedup: \(path) matches \(canonical.filePath)")
-                try converter.symlink(from: path, to: canonical.canonicalPath!)
-                try db.markComplete(path: path, canonicalPath: canonical.canonicalPath!)
+                try Symlinker.link(from: path, to: canonical.canonicalPath!, logger: logger)
+                try db.markComplete(path: path, canonicalPath: canonical.canonicalPath!, engine: canonical.engine.flatMap(Engine.init(rawValue:)))
                 return .deduplicated
             }
         } catch {
             logger.error("Dedup check failed for \(path): \(error)")
         }
 
-        // Convert
+        // Convert with primary engine, potentially falling back
+        return await convertWithFallback(path: path)
+    }
+
+    private func convertWithFallback(path: String) async -> SingleResult {
+        // Try primary engine
+        let outputDir: String
+        let usedEngine: Engine
         do {
-            let outputDir = try converter.convert(pdfPath: path)
-            try db.markComplete(path: path, canonicalPath: outputDir)
-            logger.info("Converted: \(path)")
-            return .converted
+            outputDir = try primaryEngine.convert(pdfPath: path)
+            usedEngine = primaryEngine.engine
         } catch {
-            let reason: String
-            if let convError = error as? ConversionError {
-                switch convError {
-                case .condaNotFound(let p):
-                    reason = "conda not found at \(p)"
-                case .markerFailed(let code, let stderr):
-                    reason = "marker exited \(code): \(stderr)"
-                case .outputNotCreated(let p):
-                    reason = "output not created at \(p)"
-                }
-            } else {
-                reason = error.localizedDescription
-            }
+            let reason = formatError(error)
             logger.error("Failed to convert \(path): \(reason)")
             try? db.markFailed(path: path, reason: reason)
             return .failed
         }
+
+        // If primary was Vision, check output quality
+        if primaryEngine.engine == .vision, let fallback = fallbackEngine {
+            let qualityPath = (outputDir as NSString).appendingPathComponent(".vision-quality.json")
+            if let data = try? Data(contentsOf: URL(fileURLWithPath: qualityPath)),
+               let quality = try? JSONDecoder().decode(QualityScore.self, from: data),
+               !quality.isAcceptable {
+                logger.info("Vision quality low for \(path) (confidence=\(String(format: "%.2f", quality.confidence)), garbled=\(String(format: "%.2f", quality.garbledRatio))), retrying with \(fallback.engine)")
+
+                // Remove Vision output before retrying
+                try? FileManager.default.removeItem(atPath: outputDir)
+
+                do {
+                    let fallbackDir = try fallback.convert(pdfPath: path)
+                    try db.markComplete(path: path, canonicalPath: fallbackDir, engine: fallback.engine)
+                    logger.info("Converted (fallback): \(path)")
+                    return .converted
+                } catch {
+                    let reason = formatError(error)
+                    logger.error("Fallback failed for \(path): \(reason)")
+                    try? db.markFailed(path: path, reason: "Vision low quality, fallback failed: \(reason)")
+                    return .failed
+                }
+            }
+        }
+
+        // Primary succeeded with acceptable quality
+        do {
+            try db.markComplete(path: path, canonicalPath: outputDir, engine: usedEngine)
+            logger.info("Converted: \(path)")
+            return .converted
+        } catch {
+            logger.error("Failed to mark complete \(path): \(error)")
+            return .failed
+        }
+    }
+
+    private func formatError(_ error: Error) -> String {
+        if let convError = error as? ConversionError {
+            switch convError {
+            case .condaNotFound(let p):
+                return "conda not found at \(p)"
+            case .markerFailed(let code, let stderr):
+                return "marker exited \(code): \(stderr)"
+            case .outputNotCreated(let p):
+                return "output not created at \(p)"
+            case .visionFailed(let msg):
+                return "vision failed: \(msg)"
+            }
+        }
+        return error.localizedDescription
     }
 }

@@ -98,7 +98,8 @@ final class ParchDatabase: Sendable {
                     canonicalPath: nil,
                     indexedAt: Date().timeIntervalSince1970,
                     convertedAt: nil,
-                    failureReason: nil
+                    failureReason: nil,
+                    engine: nil
                 )
                 try record.insert(db)
             }
@@ -132,7 +133,8 @@ final class ParchDatabase: Sendable {
                         canonicalPath: nil,
                         indexedAt: Date().timeIntervalSince1970,
                         convertedAt: nil,
-                        failureReason: nil
+                        failureReason: nil,
+                        engine: nil
                     )
                     try record.insert(db)
                     new += 1
@@ -151,15 +153,15 @@ final class ParchDatabase: Sendable {
         }
     }
 
-    func markComplete(path: String, canonicalPath: String) throws {
+    func markComplete(path: String, canonicalPath: String, engine: Engine? = nil) throws {
         try dbQueue.write { db in
             try db.execute(
                 sql: """
                     UPDATE indexed_pdf
-                    SET conversion_status = 'complete', converted_at = ?, canonical_path = ?, failure_reason = NULL
+                    SET conversion_status = 'complete', converted_at = ?, canonical_path = ?, failure_reason = NULL, engine = ?
                     WHERE file_path = ?
                     """,
-                arguments: [Date().timeIntervalSince1970, canonicalPath, path]
+                arguments: [Date().timeIntervalSince1970, canonicalPath, engine?.rawValue, path]
             )
         }
     }

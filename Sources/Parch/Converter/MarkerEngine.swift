@@ -1,13 +1,9 @@
 import Foundation
 import Logging
 
-enum ConversionError: Error {
-    case condaNotFound(String)
-    case markerFailed(exitCode: Int32, stderr: String)
-    case outputNotCreated(String)
-}
+final class MarkerEngine: ConversionEngine, Sendable {
+    let engine: Engine = .marker
 
-final class Converter: Sendable {
     private let condaPath: String
     private let condaEnv: String
     private let logger: Logger
@@ -16,6 +12,11 @@ final class Converter: Sendable {
         self.condaPath = Self.findConda()
         self.condaEnv = condaEnv
         self.logger = logger
+    }
+
+    /// Whether conda and the marker environment appear to be installed.
+    static func isAvailable() -> Bool {
+        FileManager.default.fileExists(atPath: findConda())
     }
 
     /// Convert a single PDF to markdown using marker_single via conda.
@@ -60,8 +61,6 @@ final class Converter: Sendable {
         // Verify output was created
         let expectedMd = ScanRules.markdownPath(forPDF: pdfPath)
         if !FileManager.default.fileExists(atPath: expectedMd) {
-            // marker_single may name the output directory slightly differently
-            // (e.g. spaces, special chars). Check if the output dir exists at all.
             if FileManager.default.fileExists(atPath: outputDir) {
                 logger.debug("Markdown at expected path not found, but output dir exists: \(outputDir)")
             } else {
@@ -70,35 +69,6 @@ final class Converter: Sendable {
         }
 
         return outputDir
-    }
-
-    /// Create a symlink from the duplicate's expected output to the canonical output.
-    func symlink(from duplicatePdfPath: String, to canonicalOutputDir: String) throws {
-        let linkDir = ScanRules.outputDirectory(forPDF: duplicatePdfPath)
-        let fm = FileManager.default
-
-        // Don't overwrite existing real directory
-        if fm.fileExists(atPath: linkDir) {
-            var isDir: ObjCBool = false
-            fm.fileExists(atPath: linkDir, isDirectory: &isDir)
-            if isDir.boolValue {
-                // Check if it's already a symlink pointing to the right place
-                if let dest = try? fm.destinationOfSymbolicLink(atPath: linkDir),
-                   dest == canonicalOutputDir {
-                    return // already correct
-                }
-                // Real directory exists - don't touch it
-                logger.warning("Output directory already exists at \(linkDir), not symlinking")
-                return
-            }
-        }
-
-        // Create parent directory if needed
-        let parent = (linkDir as NSString).deletingLastPathComponent
-        try fm.createDirectory(atPath: parent, withIntermediateDirectories: true)
-
-        try fm.createSymbolicLink(atPath: linkDir, withDestinationPath: canonicalOutputDir)
-        logger.info("Symlinked \(linkDir) -> \(canonicalOutputDir)")
     }
 
     // MARK: - Conda discovery
@@ -119,6 +89,6 @@ final class Converter: Sendable {
                 return path
             }
         }
-        return candidates[0] // default, will fail with clear error
+        return candidates[0]
     }
 }

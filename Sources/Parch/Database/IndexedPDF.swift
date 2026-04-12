@@ -13,6 +13,7 @@ struct IndexedPDF: Codable, Sendable, FetchableRecord, PersistableRecord {
     var indexedAt: Double
     var convertedAt: Double?
     var failureReason: String?
+    var engine: String?
 
     enum CodingKeys: String, CodingKey {
         case contentHash = "content_hash"
@@ -24,6 +25,7 @@ struct IndexedPDF: Codable, Sendable, FetchableRecord, PersistableRecord {
         case indexedAt = "indexed_at"
         case convertedAt = "converted_at"
         case failureReason = "failure_reason"
+        case engine
     }
 
     enum ConversionStatus: String, Codable, Sendable, DatabaseValueConvertible {
