@@ -1,5 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Template launchd agent for parch. Before installing:
+
+  1. Replace YOUR_USERNAME below with your actual macOS short username
+     (the one that owns ~/Code/OCR/parch).
+  2. Optionally set --root to restrict parch to a specific folder.
+  3. Copy to ~/Library/LaunchAgents/com.parch.indexer.plist and run:
+       launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.parch.indexer.plist
+-->
 <plist version="1.0">
 <dict>
 	<key>Label</key>
@@ -7,7 +16,7 @@
 
 	<key>ProgramArguments</key>
 	<array>
-		<string>/Users/rose/Code/OCR/parch/.build/release/parch</string>
+		<string>/Users/YOUR_USERNAME/Code/OCR/parch/.build/release/parch</string>
 		<string>run</string>
 	</array>
 
@@ -15,10 +24,10 @@
 	<integer>3600</integer>
 
 	<key>StandardOutPath</key>
-	<string>/Users/rose/.parch/parch.log</string>
+	<string>/Users/YOUR_USERNAME/.parch/parch.log</string>
 
 	<key>StandardErrorPath</key>
-	<string>/Users/rose/.parch/parch.log</string>
+	<string>/Users/YOUR_USERNAME/.parch/parch.log</string>
 
 	<key>LowPriorityIO</key>
 	<true/>

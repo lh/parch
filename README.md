@@ -109,10 +109,10 @@ parch is designed to run periodically via launchd. An example `com.parch.indexer
 
 ### Install the service
 
+The plist in the repo is a template — replace `YOUR_USERNAME` with your macOS short username before installing.
+
 ```sh
-# Edit the plist to point at your parch binary and set scan roots
-# Then install it:
-cp com.parch.indexer.plist ~/Library/LaunchAgents/
+sed "s/YOUR_USERNAME/$(id -un)/g" com.parch.indexer.plist > ~/Library/LaunchAgents/com.parch.indexer.plist
 launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.parch.indexer.plist
 
 # Check it's loaded
@@ -137,20 +137,20 @@ A POSIX file lock (`~/.parch/parch.lock`) prevents overlapping runs, so it's saf
 
 ## Dedicated processor setup (e.g. Mac Mini)
 
-If you have a spare Mac running 24/7, point it at a specific folder for offloaded processing:
+If you have a spare Mac running 24/7, point it at a specific folder for offloaded processing. Add `--root` to the ProgramArguments and a `WatchPaths` key for near-instant triggering when files land in the folder:
 
 ```xml
 <key>ProgramArguments</key>
 <array>
-    <string>/path/to/parch</string>
+    <string>/Users/YOUR_USERNAME/Code/OCR/parch/.build/release/parch</string>
     <string>run</string>
     <string>--root</string>
-    <string>/Users/you/Dropbox/ToConvert</string>
+    <string>/Users/YOUR_USERNAME/Dropbox/ToConvert</string>
 </array>
 
 <key>WatchPaths</key>
 <array>
-    <string>/Users/you/Dropbox/ToConvert</string>
+    <string>/Users/YOUR_USERNAME/Dropbox/ToConvert</string>
 </array>
 ```
 
