@@ -35,7 +35,8 @@ struct Run: AsyncParsableCommand {
         let logger = makeLogger(level: verbose ? .debug : .info)
 
         guard let lock = ProcessLock.acquire() else {
-            logger.info("Another parch process is running, skipping this invocation")
+            // Lock held by another parch run — silently exit. This is expected
+            // when WatchPaths fires while a previous run is still going.
             return
         }
         _ = lock // hold for lifetime of run

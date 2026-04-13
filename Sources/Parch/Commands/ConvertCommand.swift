@@ -28,7 +28,6 @@ struct Convert: AsyncParsableCommand {
         let logger = makeLogger(level: verbose ? .debug : .info)
 
         guard let lock = ProcessLock.acquire() else {
-            logger.info("Another parch process is running, skipping this invocation")
             return
         }
         _ = lock // hold for lifetime of run

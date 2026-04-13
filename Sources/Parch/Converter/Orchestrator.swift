@@ -151,26 +151,38 @@ final class Orchestrator: Sendable {
         }
 
         // If primary was Vision, check output quality
-        if primaryEngine.engine == .vision, let fallback = fallbackEngine {
+        if primaryEngine.engine == .vision {
             let qualityPath = (outputDir as NSString).appendingPathComponent(".vision-quality.json")
             if let data = try? Data(contentsOf: URL(fileURLWithPath: qualityPath)),
-               let quality = try? JSONDecoder().decode(QualityScore.self, from: data),
-               !quality.isAcceptable {
-                logger.info("Vision quality low for \(path) (confidence=\(String(format: "%.2f", quality.confidence)), garbled=\(String(format: "%.2f", quality.garbledRatio))), retrying with \(fallback.engine)")
+               let quality = try? JSONDecoder().decode(QualityScore.self, from: data) {
 
-                // Remove Vision output before retrying
-                try? FileManager.default.removeItem(atPath: outputDir)
-
-                do {
-                    let fallbackDir = try fallback.convert(pdfPath: path)
-                    try db.markComplete(path: path, canonicalPath: fallbackDir, engine: fallback.engine)
-                    logger.info("Converted (fallback): \(path)")
-                    return .converted
-                } catch {
-                    let reason = formatError(error)
-                    logger.error("Fallback failed for \(path): \(reason)")
-                    try? db.markFailed(path: path, reason: "Vision low quality, fallback failed: \(reason)")
+                // Pre-check: if Vision found no extractable text at all, this is
+                // an image-only PDF (scans, photos). Marker won't help — surya will
+                // try raster OCR but typically runs out of MPS memory or produces
+                // nothing useful. Skip the fallback, mark failed with a clear reason.
+                if quality.characterCount == 0 {
+                    logger.info("Image-only PDF (no extractable text): \(path)")
+                    try? FileManager.default.removeItem(atPath: outputDir)
+                    try? db.markFailed(path: path, reason: "Image-only PDF, no extractable text")
                     return .failed
+                }
+
+                if !quality.isAcceptable, let fallback = fallbackEngine {
+                    logger.info("Vision quality low for \(path) (confidence=\(String(format: "%.2f", quality.confidence)), garbled=\(String(format: "%.2f", quality.garbledRatio))), retrying with \(fallback.engine)")
+
+                    try? FileManager.default.removeItem(atPath: outputDir)
+
+                    do {
+                        let fallbackDir = try fallback.convert(pdfPath: path)
+                        try db.markComplete(path: path, canonicalPath: fallbackDir, engine: fallback.engine)
+                        logger.info("Converted (fallback): \(path)")
+                        return .converted
+                    } catch {
+                        let reason = formatError(error)
+                        logger.error("Fallback failed for \(path): \(reason)")
+                        try? db.markFailed(path: path, reason: "Vision low quality, fallback failed: \(reason)")
+                        return .failed
+                    }
                 }
             }
         }
