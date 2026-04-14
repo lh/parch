@@ -170,7 +170,11 @@ final class Orchestrator: Sendable {
                 if !quality.isAcceptable, let fallback = fallbackEngine {
                     logger.info("Vision quality low for \(path) (confidence=\(String(format: "%.2f", quality.confidence)), garbled=\(String(format: "%.2f", quality.garbledRatio))), retrying with \(fallback.engine)")
 
-                    try? FileManager.default.removeItem(atPath: outputDir)
+                    // Keep Vision's markdown in memory so we can restore it
+                    // if the fallback fails. Partial Vision output is still
+                    // better than marking the whole file failed.
+                    let visionMdPath = ScanRules.markdownPath(forPDF: path)
+                    let visionBackup = try? String(contentsOfFile: visionMdPath, encoding: .utf8)
 
                     do {
                         let fallbackDir = try fallback.convert(pdfPath: path)
@@ -179,9 +183,18 @@ final class Orchestrator: Sendable {
                         return .converted
                     } catch {
                         let reason = formatError(error)
-                        logger.error("Fallback failed for \(path): \(reason)")
-                        try? db.markFailed(path: path, reason: "Vision low quality, fallback failed: \(reason)")
-                        return .failed
+                        logger.warning("Fallback failed for \(path): \(reason), keeping Vision output")
+
+                        // Restore Vision's markdown (marker may have overwritten it)
+                        if let markdown = visionBackup {
+                            try? FileManager.default.createDirectory(atPath: outputDir, withIntermediateDirectories: true)
+                            try? markdown.write(toFile: visionMdPath, atomically: true, encoding: .utf8)
+                            try? db.markComplete(path: path, canonicalPath: outputDir, engine: .vision)
+                            return .converted
+                        } else {
+                            try? db.markFailed(path: path, reason: "Vision low quality, fallback failed: \(reason)")
+                            return .failed
+                        }
                     }
                 }
             }
