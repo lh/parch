@@ -22,10 +22,12 @@ Designed to run as a launchd background service on a schedule and/or on director
 ```sh
 git clone https://github.com/lh/parch.git
 cd parch
-swift build -c release
+./scripts/build.sh
 ```
 
 The binary is at `.build/release/parch`. Symlink it onto your PATH if you want, or run it directly.
+
+**About `scripts/build.sh`:** it runs `swift build -c release` and then code-signs the binary with a Developer ID Application certificate if one is available on your system. Signing makes macOS's TCC (Privacy & Security) permissions stable across rebuilds — without it, each rebuild looks like a new app to macOS and you'll be re-prompted for folder access every time. If you don't have a Developer ID certificate the build still works, you just get TCC churn on rebuild. Set `PARCH_SIGNING_IDENTITY` to override which identity is used.
 
 ## Conversion engines
 
