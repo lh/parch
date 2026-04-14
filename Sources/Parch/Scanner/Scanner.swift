@@ -85,7 +85,7 @@ final class Scanner: Sendable {
     private func walkScanRoots(excluding known: Set<String>) throws -> [String] {
         var found: [String] = []
         let fm = FileManager.default
-        let keys: [URLResourceKey] = [.isDirectoryKey, .isRegularFileKey, .contentModificationDateKey, .fileSizeKey]
+        let keys: [URLResourceKey] = [.isDirectoryKey, .isRegularFileKey, .isSymbolicLinkKey, .contentModificationDateKey, .fileSizeKey]
 
         for root in scanRoots {
             let rootURL = URL(fileURLWithPath: root)
@@ -109,6 +109,18 @@ final class Scanner: Sendable {
                 }
 
                 let values = try? fileURL.resourceValues(forKeys: Set(keys))
+
+                // Skip symlinks entirely. Following them would reach outside the
+                // declared scan roots (e.g. into cloud storage), which triggers
+                // surprise TCC prompts and conversions of files the user didn't
+                // intend to index. If you want cloud storage scanned, add it
+                // as an explicit scan root.
+                if values?.isSymbolicLink == true {
+                    if values?.isDirectory == true {
+                        enumerator.skipDescendants()
+                    }
+                    continue
+                }
 
                 // Skip .nomarker directories and their descendants
                 if values?.isDirectory == true {
