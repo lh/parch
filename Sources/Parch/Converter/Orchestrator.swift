@@ -80,6 +80,20 @@ final class Orchestrator: Sendable {
         return result
     }
 
+    /// Force-convert a single PDF, bypassing the pending queue.
+    /// Re-hashes, runs dedup, and converts even if already complete.
+    func convertSingle(_ pdf: IndexedPDF) async -> ConvertResult {
+        var result = ConvertResult()
+        let single = await processSingle(pdf)
+        switch single {
+        case .converted:    result.converted += 1
+        case .deduplicated: result.deduplicated += 1
+        case .failed:       result.failed += 1
+        case .skipped:      result.skipped += 1
+        }
+        return result
+    }
+
     // MARK: - Single PDF processing
 
     private enum SingleResult: Sendable {

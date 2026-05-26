@@ -12,6 +12,7 @@ struct Parch: AsyncParsableCommand {
             ListFailed.self,
             Run.self,
             Convert.self,
+            ConvertFile.self,
         ]
     )
 }
