@@ -26,6 +26,7 @@ let package = Package(
             dependencies: [
                 "parch",
                 .product(name: "GRDB", package: "GRDB.swift"),
+                .product(name: "Logging", package: "swift-log"),
             ],
             path: "Tests/ParchTests"
         ),

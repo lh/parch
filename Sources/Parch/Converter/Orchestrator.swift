@@ -81,10 +81,12 @@ final class Orchestrator: Sendable {
     }
 
     /// Force-convert a single PDF, bypassing the pending queue.
-    /// Re-hashes, runs dedup, and converts even if already complete.
+    /// Re-hashes and converts even if already complete, and deliberately skips
+    /// dedup: the caller asked for this file to be converted, not linked to
+    /// somebody else's output.
     func convertSingle(_ pdf: IndexedPDF) async -> ConvertResult {
         var result = ConvertResult()
-        let single = await processSingle(pdf)
+        let single = await processSingle(pdf, force: true)
         switch single {
         case .converted:    result.converted += 1
         case .deduplicated: result.deduplicated += 1
@@ -103,7 +105,7 @@ final class Orchestrator: Sendable {
         case skipped
     }
 
-    private func processSingle(_ pdf: IndexedPDF) async -> SingleResult {
+    private func processSingle(_ pdf: IndexedPDF, force: Bool = false) async -> SingleResult {
         let path = pdf.filePath
 
         // Check file still exists
@@ -131,26 +133,73 @@ final class Orchestrator: Sendable {
             return .failed
         }
 
-        // Check for existing conversion with same hash (dedup)
-        do {
-            let existing = try db.fetchByHash(hash)
-            if let canonical = existing.first(where: {
-                $0.conversionStatus == .complete && $0.canonicalPath != nil
-            }) {
-                logger.info("Dedup: \(path) matches \(canonical.filePath)")
-                try Symlinker.link(from: path, to: canonical.canonicalPath!, logger: logger)
-                try db.markComplete(path: path, canonicalPath: canonical.canonicalPath!, engine: canonical.engine.flatMap(Engine.init(rawValue:)))
-                return .deduplicated
-            }
-        } catch {
-            logger.error("Dedup check failed for \(path): \(error)")
+        // Link to an existing conversion of the same content, unless the caller
+        // forced this file to be converted on its own.
+        if !force, let deduped = deduplicate(path: path, hash: hash) {
+            return deduped
         }
 
         // Convert with primary engine, potentially falling back
         return await convertWithFallback(path: path)
     }
 
+    /// Link `path` to an existing conversion of byte-identical content.
+    /// Returns nil when no usable conversion exists and the file must be
+    /// converted itself.
+    private func deduplicate(path: String, hash: String) -> SingleResult? {
+        let candidates: [IndexedPDF]
+        do {
+            candidates = try db.fetchByHash(hash)
+        } catch {
+            logger.error("Dedup check failed for \(path): \(error)")
+            return nil
+        }
+
+        for canonical in candidates
+        where canonical.filePath != path && canonical.conversionStatus == .complete {
+            guard let canonicalDir = canonical.canonicalPath else { continue }
+
+            // A `complete` row is only worth linking to while its markdown is
+            // still there. Linking to a deleted conversion would leave a
+            // dangling symlink and a row that claims complete forever, since
+            // nothing rescans a file whose size and mtime never changed.
+            guard ScanRules.hasMarkdownOutput(inDirectory: canonicalDir) else {
+                logger.warning("Stale conversion for \(canonical.filePath): no markdown at \(canonicalDir), requeueing it")
+                try? db.markPending(path: canonical.filePath)
+                continue
+            }
+
+            do {
+                try Symlinker.link(from: path, to: canonicalDir, logger: logger)
+                try db.markComplete(
+                    path: path,
+                    canonicalPath: canonicalDir,
+                    engine: canonical.engine.flatMap(Engine.init(rawValue:))
+                )
+            } catch {
+                logger.error("Dedup failed for \(path): \(error)")
+                return nil
+            }
+
+            logger.info("Dedup: \(path) matches \(canonical.filePath)")
+            return .deduplicated
+        }
+
+        return nil
+    }
+
     private func convertWithFallback(path: String) async -> SingleResult {
+        // An earlier dedup may have left this file's output directory as a
+        // symlink into another file's conversion. Engines write into that
+        // directory, so converting through the link would overwrite the
+        // canonical output with this file's content.
+        guard clearSymlinkedOutput(forPDF: path) else {
+            let reason = "Could not remove dedup symlink at \(ScanRules.outputDirectory(forPDF: path))"
+            logger.error("\(reason), refusing to convert \(path)")
+            try? db.markFailed(path: path, reason: reason)
+            return .failed
+        }
+
         // Try primary engine
         let outputDir: String
         let usedEngine: Engine
@@ -222,6 +271,22 @@ final class Orchestrator: Sendable {
         } catch {
             logger.error("Failed to mark complete \(path): \(error)")
             return .failed
+        }
+    }
+
+    /// Remove this PDF's output directory if it is a dedup symlink, so the
+    /// conversion lands in its own directory. Returns false only if a symlink
+    /// is present and could not be removed.
+    private func clearSymlinkedOutput(forPDF path: String) -> Bool {
+        let outputDir = ScanRules.outputDirectory(forPDF: path)
+        guard let destination = ScanRules.symlinkDestination(of: outputDir) else { return true }
+        do {
+            try FileManager.default.removeItem(atPath: outputDir)
+            logger.info("Removed dedup symlink \(outputDir) -> \(destination) before converting")
+            return true
+        } catch {
+            logger.error("Could not remove dedup symlink \(outputDir): \(error)")
+            return false
         }
     }
 

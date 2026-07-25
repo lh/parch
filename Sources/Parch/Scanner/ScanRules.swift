@@ -89,4 +89,30 @@ enum ScanRules {
         let dir = url.deletingLastPathComponent().appendingPathComponent(stem)
         return dir.appendingPathComponent(stem + ".md").path
     }
+
+    /// Whether a conversion output directory still holds usable markdown.
+    /// An index row claiming `complete` is not evidence the output survived:
+    /// output directories get deleted, and a dedup symlink dangles as soon as
+    /// its target goes away. The markdown filename depends on which engine and
+    /// which PDF stem produced it, so any non-empty `.md` counts.
+    static func hasMarkdownOutput(inDirectory dir: String) -> Bool {
+        let fm = FileManager.default
+        var isDirectory: ObjCBool = false
+        guard fm.fileExists(atPath: dir, isDirectory: &isDirectory), isDirectory.boolValue else {
+            return false
+        }
+        guard let entries = try? fm.contentsOfDirectory(atPath: dir) else { return false }
+        return entries.contains { entry in
+            guard entry.lowercased().hasSuffix(".md") else { return false }
+            let full = (dir as NSString).appendingPathComponent(entry)
+            let size = try? URL(fileURLWithPath: full)
+                .resourceValues(forKeys: [.fileSizeKey]).fileSize
+            return (size ?? 0) > 0
+        }
+    }
+
+    /// The destination of `path` if it is a symbolic link, otherwise nil.
+    static func symlinkDestination(of path: String) -> String? {
+        try? FileManager.default.destinationOfSymbolicLink(atPath: path)
+    }
 }

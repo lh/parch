@@ -80,8 +80,6 @@ struct ConvertFile: AsyncParsableCommand {
         if result.converted > 0 {
             let outDir = ScanRules.outputDirectory(forPDF: resolved)
             print("Done: converted -> \(outDir)")
-        } else if result.deduplicated > 0 {
-            print("Done: deduplicated (matched existing conversion)")
         } else if result.failed > 0 {
             if let refreshed = try? db.fetchByPath(resolved), let reason = refreshed.failureReason {
                 print("Failed: \(reason)")

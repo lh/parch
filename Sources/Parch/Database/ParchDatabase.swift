@@ -166,6 +166,23 @@ final class ParchDatabase: Sendable {
         }
     }
 
+    /// Reset a row to pending and drop the conversion it advertised.
+    /// Used when the output a `complete` row points at has gone missing, so the
+    /// row stops offering a conversion that duplicates could link to.
+    func markPending(path: String) throws {
+        try dbQueue.write { db in
+            try db.execute(
+                sql: """
+                    UPDATE indexed_pdf
+                    SET conversion_status = 'pending', converted_at = NULL, canonical_path = NULL,
+                        failure_reason = NULL, engine = NULL
+                    WHERE file_path = ?
+                    """,
+                arguments: [path]
+            )
+        }
+    }
+
     func markFailed(path: String, reason: String) throws {
         try dbQueue.write { db in
             try db.execute(
