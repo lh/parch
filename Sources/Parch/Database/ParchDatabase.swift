@@ -74,20 +74,40 @@ final class ParchDatabase: Sendable {
 
     // MARK: - Write
 
+    /// Whether two mtimes are the same modification event. Exact equality is
+    /// wrong here: APFS keeps nanoseconds but different stat paths round
+    /// differently (microseconds vs nanoseconds), so a stored mtime can
+    /// drift from a fresh stat of the untouched file by under a
+    /// millisecond. Treating that as a modification would needlessly reset
+    /// completed conversions.
+    static func sameMtime(_ a: Double, _ b: Double) -> Bool {
+        abs(a - b) < 0.001
+    }
+
+    /// Reset a changed file's row for re-conversion. Keyed on file_path like
+    /// every other write: IndexedPDF has no primary-key mapping, so GRDB's
+    /// record.update(db) throws "Key not found [rowid:NULL]".
+    private static func resetChanged(
+        _ db: Database, filePath: String, fileSize: Int64, mtime: Double
+    ) throws {
+        try db.execute(
+            sql: """
+                UPDATE indexed_pdf
+                SET file_size = ?, mtime = ?, content_hash = NULL,
+                    conversion_status = 'pending', converted_at = NULL, failure_reason = NULL
+                WHERE file_path = ?
+                """,
+            arguments: [fileSize, mtime, filePath]
+        )
+    }
+
     func upsertDiscovered(filePath: String, fileSize: Int64, mtime: Double) throws {
         try dbQueue.write { db in
-            if var existing = try IndexedPDF.fetchByPath(filePath, db: db) {
-                if existing.fileSize == fileSize && existing.mtime == mtime {
+            if let existing = try IndexedPDF.fetchByPath(filePath, db: db) {
+                if existing.fileSize == fileSize && Self.sameMtime(existing.mtime, mtime) {
                     return // unchanged
                 }
-                // File changed - reset for re-conversion
-                existing.fileSize = fileSize
-                existing.mtime = mtime
-                existing.contentHash = nil
-                existing.conversionStatus = .pending
-                existing.convertedAt = nil
-                existing.failureReason = nil
-                try existing.update(db)
+                try Self.resetChanged(db, filePath: filePath, fileSize: fileSize, mtime: mtime)
             } else {
                 let record = IndexedPDF(
                     contentHash: nil,
@@ -110,18 +130,14 @@ final class ParchDatabase: Sendable {
         var new = 0, updated = 0, skipped = 0
         try dbQueue.write { db in
             for entry in entries {
-                if var existing = try IndexedPDF.fetchByPath(entry.filePath, db: db) {
-                    if existing.fileSize == entry.fileSize && existing.mtime == entry.mtime {
+                if let existing = try IndexedPDF.fetchByPath(entry.filePath, db: db) {
+                    if existing.fileSize == entry.fileSize && Self.sameMtime(existing.mtime, entry.mtime) {
                         skipped += 1
                         continue
                     }
-                    existing.fileSize = entry.fileSize
-                    existing.mtime = entry.mtime
-                    existing.contentHash = nil
-                    existing.conversionStatus = .pending
-                    existing.convertedAt = nil
-                    existing.failureReason = nil
-                    try existing.update(db)
+                    try Self.resetChanged(
+                        db, filePath: entry.filePath,
+                        fileSize: entry.fileSize, mtime: entry.mtime)
                     updated += 1
                 } else {
                     let record = IndexedPDF(
