@@ -18,7 +18,7 @@ struct Convert: AsyncParsableCommand {
     @Option(name: .long, help: "Conda environment containing marker-pdf")
     var condaEnv: String = "marker"
 
-    @Option(name: .long, help: "Conversion engine: auto, vision, or marker")
+    @Option(name: .long, help: "Conversion engine: auto, vision, marker, or ovis")
     var engine: EngineChoice = .auto
 
     @Option(name: .long, help: "Only convert PDFs under this directory")

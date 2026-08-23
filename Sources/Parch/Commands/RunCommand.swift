@@ -22,7 +22,7 @@ struct Run: AsyncParsableCommand {
     @Option(name: .long, help: "Conda environment containing marker-pdf")
     var condaEnv: String = "marker"
 
-    @Option(name: .long, help: "Conversion engine: auto, vision, or marker")
+    @Option(name: .long, help: "Conversion engine: auto, vision, marker, or ovis")
     var engine: EngineChoice = .auto
 
     @Option(name: .long, parsing: .upToNextOption, help: "Directories to scan (default: ~/Documents ~/Code)")

@@ -11,6 +11,8 @@ enum EngineFactory {
             return (VisionEngine(logger: logger), nil)
         case .marker:
             return (MarkerEngine(condaEnv: condaEnv, logger: logger), nil)
+        case .ovis:
+            return (OvisEngine(logger: logger), nil)
         case .auto:
             let fallback: ConversionEngine? = MarkerEngine.isAvailable()
                 ? MarkerEngine(condaEnv: condaEnv, logger: logger)

@@ -297,6 +297,8 @@ final class Orchestrator: Sendable {
                 return "conda not found at \(p)"
             case .markerFailed(let code, let stderr):
                 return "marker exited \(code): \(stderr)"
+            case .ovisFailed(let code, let stderr):
+                return "ovis exited \(code): \(stderr)"
             case .outputNotCreated(let p):
                 return "output not created at \(p)"
             case .visionFailed(let msg):
