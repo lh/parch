@@ -91,7 +91,7 @@ conda run -n ovis pip install torch torchvision transformers accelerate pillow p
 
 The ~1.7GB model downloads from Hugging Face on first run. The Python worker script is embedded in the parch binary and written to `~/.parch/ovis_convert.py` at runtime, so there is nothing else to install. Runs on MPS (Apple Silicon GPU) automatically, falling back to CPU.
 
-Two decode-loop guards are built into the worker (greedy decoding can repeat a paragraph forever on some pages): a repeat-detecting stopping criterion during generation, and block-level dedup plus the model card's character-level cleaner afterwards. The worker also pins both end-of-turn token ids explicitly — the upstream repo ships no `generation_config.json` and its config-level EOS differs from the chat template's, which otherwise sends every page into a runaway loop.
+Two decode-loop guards are built into the worker (greedy decoding can repeat a paragraph forever on some pages): a repeat-detecting stopping criterion during generation, and block-level dedup plus the model card's character-level cleaner afterwards. Known trade-off: the stopping criterion can truncate a pathologically repetitive page (e.g. a form of many identical blank rows), since an exact 128-token repeat is indistinguishable from a decode loop mid-generation. The worker also pins both end-of-turn token ids explicitly — the upstream repo ships no `generation_config.json` and its config-level EOS differs from the chat template's, which otherwise sends every page into a runaway loop.
 
 ### Auto mode logic
 
