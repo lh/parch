@@ -69,7 +69,7 @@ struct ConvertFile: AsyncParsableCommand {
         let orchestrator = Orchestrator(
             db: db,
             primaryEngine: primary,
-            fallbackEngine: fallback,
+            fallbackPolicy: fallback,
             logger: logger,
             maxWorkers: 1
         )

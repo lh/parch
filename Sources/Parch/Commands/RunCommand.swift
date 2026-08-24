@@ -56,7 +56,7 @@ struct Run: AsyncParsableCommand {
 
         // Phase 2: convert
         let (primary, fallback) = EngineFactory.make(choice: engine, condaEnv: condaEnv, logger: logger)
-        let orchestrator = Orchestrator(db: db, primaryEngine: primary, fallbackEngine: fallback, logger: logger, maxWorkers: workers)
+        let orchestrator = Orchestrator(db: db, primaryEngine: primary, fallbackPolicy: fallback, logger: logger, maxWorkers: workers)
         print("Converting pending PDFs (limit: \(limit), workers: \(workers))...")
         let convertResult = await orchestrator.convertPending(limit: limit)
         print("Convert: \(convertResult.converted) done, \(convertResult.deduplicated) deduped, \(convertResult.failed) failed, \(convertResult.skipped) skipped")

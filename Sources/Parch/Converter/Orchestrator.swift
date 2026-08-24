@@ -11,20 +11,20 @@ struct ConvertResult: Sendable {
 final class Orchestrator: Sendable {
     private let db: ParchDatabase
     private let primaryEngine: ConversionEngine
-    private let fallbackEngine: ConversionEngine?
+    private let fallbackPolicy: FallbackPolicy?
     private let logger: Logger
     private let maxWorkers: Int
 
     init(
         db: ParchDatabase,
         primaryEngine: ConversionEngine,
-        fallbackEngine: ConversionEngine? = nil,
+        fallbackPolicy: FallbackPolicy? = nil,
         logger: Logger,
         maxWorkers: Int = 2
     ) {
         self.db = db
         self.primaryEngine = primaryEngine
-        self.fallbackEngine = fallbackEngine
+        self.fallbackPolicy = fallbackPolicy
         self.logger = logger
         self.maxWorkers = maxWorkers
     }
@@ -219,10 +219,12 @@ final class Orchestrator: Sendable {
             if let data = try? Data(contentsOf: URL(fileURLWithPath: qualityPath)),
                let quality = try? JSONDecoder().decode(QualityScore.self, from: data) {
 
-                // Pre-check: if Vision found no extractable text at all, this is
-                // an image-only PDF (scans, photos). Marker won't help — surya will
-                // try raster OCR but typically runs out of MPS memory or produces
-                // nothing useful. Skip the fallback, mark failed with a clear reason.
+                // Pre-check: if Vision found no extractable text at all, this
+                // is an image-only PDF (plots, photos, imaging exports). There
+                // is nothing to transcribe, so no fallback can help: marker's
+                // OCR produces nothing useful, and ovis fabricates plausible
+                // text rather than failing (Devon canary, 2026-08-24). Mark
+                // failed with a clear reason.
                 if quality.characterCount == 0 {
                     logger.info("Image-only PDF (no extractable text): \(path)")
                     try? FileManager.default.removeItem(atPath: outputDir)
@@ -230,8 +232,8 @@ final class Orchestrator: Sendable {
                     return .failed
                 }
 
-                if !quality.isAcceptable, let fallback = fallbackEngine {
-                    logger.info("Vision quality low for \(path) (confidence=\(String(format: "%.2f", quality.confidence)), garbled=\(String(format: "%.2f", quality.garbledRatio))), retrying with \(fallback.engine)")
+                if !quality.isAcceptable, let (fallback, reason) = fallbackPolicy?.choose(forPDF: path) {
+                    logger.info("Vision quality low for \(path) (confidence=\(String(format: "%.2f", quality.confidence)), garbled=\(String(format: "%.2f", quality.garbledRatio))), retrying with \(fallback.engine) (\(reason))")
 
                     // Keep Vision's markdown in memory so we can restore it
                     // if the fallback fails. Partial Vision output is still

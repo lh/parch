@@ -15,8 +15,8 @@ final class MarkerEngine: ConversionEngine, Sendable {
     }
 
     /// Whether conda and the marker environment appear to be installed.
-    static func isAvailable() -> Bool {
-        FileManager.default.fileExists(atPath: CondaLocator.find())
+    static func isAvailable(condaEnv: String = "marker") -> Bool {
+        CondaLocator.envExists(condaEnv)
     }
 
     /// Convert a single PDF to markdown using marker_single via conda.

@@ -31,7 +31,7 @@ The binary is at `.build/release/parch`. Symlink it onto your PATH if you want, 
 
 ## Conversion engines
 
-parch has three conversion engines. Auto mode (default) picks between vision and marker per file; ovis runs only when requested explicitly.
+parch has three conversion engines. Auto mode (default) runs Vision first and, when its output is poor, retries with the engine suited to the document: marker for digital PDFs, ovis for scanned ones.
 
 | Engine | Dependencies | Speed | Best for |
 |--------|--------------|-------|----------|
@@ -68,7 +68,7 @@ parch auto-detects conda in standard locations (`/opt/homebrew/bin/conda`, `~/mi
 
 ### Ovis (optional, explicit only)
 
-Uses [OvisOCR2](https://huggingface.co/ATH-MaaS/OvisOCR2), a 0.9B end-to-end page-image-to-markdown model (Apache 2.0, Qwen3.5-0.8B base). It always OCRs the rendered page, so its niche is scanned and image-only documents: on those it matches marker's structure quality (HTML tables, LaTeX formulas, code blocks) at roughly a third of marker's wall time. It is never selected by auto mode — request it with `--engine ovis`.
+Uses [OvisOCR2](https://huggingface.co/ATH-MaaS/OvisOCR2), a 0.9B end-to-end page-image-to-markdown model (Apache 2.0, Qwen3.5-0.8B base). It always OCRs the rendered page, so its niche is scanned documents: on those it matches marker's structure quality (HTML tables, LaTeX formulas, code blocks) at roughly a third of marker's wall time. Auto mode uses it as the fallback for scanned documents when the `ovis` conda env is installed; it can also be requested directly with `--engine ovis`. It is never given documents where Vision finds no text at all — on pure-image pages it fabricates text instead of failing.
 
 Measured on an M3 Max (2026-08-23), single dense page with code, a table, and math:
 
@@ -97,9 +97,10 @@ Two decode-loop guards are built into the worker (greedy decoding can repeat a p
 
 1. Try Vision first
 2. Vision writes `.vision-quality.json` sidecar with confidence score, character count, and garble ratio
-3. If quality is acceptable (confidence ≥ 0.5, garble ratio ≤ 0.3, ≥ 100 chars/page), keep Vision output
-4. If quality is poor **and** marker is available, delete Vision output and retry with marker
-5. If marker isn't installed, Vision output is kept regardless
+3. If Vision found no text at all, mark the file failed. There is nothing to transcribe — and no fallback runs, because ovis fabricates plausible text for pure-image pages instead of failing (see `deep-dive/ovis-canary-devon-2026-08-24.md`)
+4. If quality is acceptable (confidence ≥ 0.5, garble ratio ≤ 0.3, ≥ 100 chars/page), keep Vision output
+5. If quality is poor, retry with the engine suited to the document class: documents with a real text layer go to marker (exact, fast); scanned documents (no text layer) go to ovis (faithful structure at a third of marker's OCR time). Whichever of the two is installed covers for the other
+6. If neither fallback is installed, Vision output is kept regardless
 
 ## Usage
 
@@ -111,7 +112,7 @@ parch run --limit 200              # convert more per run
 parch run --engine vision          # Vision only, never marker
 parch run --engine marker          # marker only, requires conda setup
 parch run --engine ovis            # OvisOCR2 only, requires conda setup; best for scans
-parch run --engine auto            # default: Vision primary, marker fallback
+parch run --engine auto            # default: Vision primary; marker/ovis fallback by document class
 parch run --root ~/Dropbox/Papers  # custom scan root
 parch run --scan-only              # index without converting
 ```

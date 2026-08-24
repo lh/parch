@@ -19,6 +19,11 @@ final class OvisEngine: ConversionEngine, Sendable {
         self.logger = logger
     }
 
+    /// Whether conda and the ovis environment appear to be installed.
+    static func isAvailable() -> Bool {
+        CondaLocator.envExists("ovis")
+    }
+
     /// Convert a single PDF to markdown. Returns the output directory path.
     func convert(pdfPath: String) throws -> String {
         let outputDir = ScanRules.outputDirectory(forPDF: pdfPath)
@@ -53,6 +58,12 @@ final class OvisEngine: ConversionEngine, Sendable {
                 exitCode: process.terminationStatus,
                 stderr: String(stderrOutput.suffix(500))
             )
+        }
+
+        // The worker reports per-page timings on stderr; surface them so
+        // slow documents can be diagnosed after the fact.
+        if !stderrOutput.isEmpty {
+            logger.debug("ovis worker for \(pdfPath):\n\(stderrOutput)")
         }
 
         let expectedMd = ScanRules.markdownPath(forPDF: pdfPath)
@@ -116,7 +127,10 @@ PROMPT = (
 RENDER_SCALE = 200 / 72  # 200 DPI keeps an A4/Letter page under the model's pixel cap
 MIN_PIXELS = 448 * 448
 MAX_PIXELS = 2880 * 2880
-MAX_NEW_TOKENS = 16384
+# Dense real pages generate 1-3k tokens; pure-image pages can grind toward
+# the cap producing junk that post-processing strips, so a tight cap bounds
+# the wasted time (~22 min/page at 16k on an M1 at background priority).
+MAX_NEW_TOKENS = 8192
 
 
 def clean_truncated_repeats(text, min_text_len=8000, max_period=200,

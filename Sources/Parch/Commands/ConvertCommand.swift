@@ -34,7 +34,7 @@ struct Convert: AsyncParsableCommand {
 
         let db = try ParchDatabase(logger: logger)
         let (primary, fallback) = EngineFactory.make(choice: engine, condaEnv: condaEnv, logger: logger)
-        let orchestrator = Orchestrator(db: db, primaryEngine: primary, fallbackEngine: fallback, logger: logger, maxWorkers: workers)
+        let orchestrator = Orchestrator(db: db, primaryEngine: primary, fallbackPolicy: fallback, logger: logger, maxWorkers: workers)
 
         let counts = try db.countByStatus()
         let pending = counts[.pending] ?? 0
