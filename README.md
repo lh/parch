@@ -15,7 +15,7 @@ Designed to run as a launchd background service on a schedule and/or on director
 
 - macOS 15+
 - Swift 6.2+ (comes with Xcode / Command Line Tools)
-- Optional: miniconda/miniforge with a `marker` environment (for the marker engine)
+- Optional: miniconda/miniforge with a `marker` environment (for the marker engine) and/or an `ovis` environment (for the ovis engine)
 
 ## Install
 
@@ -66,7 +66,7 @@ parch auto-detects conda in standard locations (`/opt/homebrew/bin/conda`, `~/mi
 
 **Known issue on Apple Silicon:** surya-ocr (used by marker) has an MPS bug that crashes on certain tensor shapes. If you hit it, patch `.max().item()` call sites in the env's surya install to use `.cpu().max().item()` -- see [surya#493](https://github.com/VikParuchuri/surya/pull/493).
 
-### Ovis (optional, explicit only)
+### Ovis (optional)
 
 Uses [OvisOCR2](https://huggingface.co/ATH-MaaS/OvisOCR2), a 0.9B end-to-end page-image-to-markdown model (Apache 2.0, Qwen3.5-0.8B base). It always OCRs the rendered page, so its niche is scanned documents: on those it matches marker's structure quality (HTML tables, LaTeX formulas, code blocks) at roughly a third of marker's wall time. Auto mode uses it as the fallback for scanned documents when the `ovis` conda env is installed; it can also be requested directly with `--engine ovis`. It is never given documents where Vision finds no text at all — on pure-image pages it fabricates text instead of failing.
 
@@ -109,7 +109,7 @@ Two decode-loop guards are built into the worker (greedy decoding can repeat a p
 ```sh
 parch run                          # scan default roots, convert up to 50 pending
 parch run --limit 200              # convert more per run
-parch run --engine vision          # Vision only, never marker
+parch run --engine vision          # Vision only, no fallback
 parch run --engine marker          # marker only, requires conda setup
 parch run --engine ovis            # OvisOCR2 only, requires conda setup; best for scans
 parch run --engine auto            # default: Vision primary; marker/ovis fallback by document class
@@ -186,7 +186,7 @@ If you have a spare Mac running 24/7, point it at a specific folder for offloade
 </array>
 ```
 
-Dropbox placeholder files (Smart Sync "online only") are materialized transparently when parch reads them.
+Dropbox placeholder files (Smart Sync "online only") cannot be read until Dropbox materializes them locally: hashing fails with "Resource deadlock avoided" and the file is marked failed with that reason. Make the folder (or file) available offline in Dropbox, then reset the failed rows to retry (snippet under Troubleshooting).
 
 ## Data & paths
 
@@ -198,8 +198,8 @@ Dropbox placeholder files (Smart Sync "online only") are materialized transparen
 
 ## Troubleshooting
 
-**All files marked failed with "Resource deadlock avoided"**
-You're on an older parch build. This was a FileHandle issue on cloud provider files that's fixed in current versions. Rebuild from main.
+**Files failed with "Resource deadlock avoided"**
+The file is a cloud-provider placeholder (Dropbox "online only") that isn't materialized locally. Make it available offline, then reset the row with the snippet below. If *every* file fails this way on an old build, rebuild from main — early versions crashed the whole run on the first placeholder.
 
 **Vision output looks garbled on slides**
 Slide title graphics are hard for Vision OCR. Use `--engine marker` for those documents, or let auto mode fall back (ensure marker is installed).
@@ -214,3 +214,7 @@ Check `~/.parch/parch.log`. If marker is CPU-bound on a large PDF, it can take 3
 ```sh
 sqlite3 ~/.parch/index.db "UPDATE indexed_pdf SET conversion_status='pending', failure_reason=NULL WHERE file_path='/path/to/file.pdf';"
 ```
+
+## License
+
+MIT — see [LICENSE](LICENSE).
