@@ -55,7 +55,11 @@ final class VisionEngine: ConversionEngine, Sendable {
         )
         let qualityPath = (outputDir as NSString).appendingPathComponent(".vision-quality.json")
         let data = try JSONEncoder().encode(quality)
-        try data.write(to: URL(fileURLWithPath: qualityPath))
+        // Atomic (replace-by-rename) like the markdown write above: a plain
+        // overwrite fails on a Dropbox-evicted (dataless) sidecar left by an
+        // earlier conversion, killing the whole conversion after the
+        // markdown was already written.
+        try data.write(to: URL(fileURLWithPath: qualityPath), options: .atomic)
 
         logger.info("Vision: \(pageCount) pages, confidence=\(String(format: "%.2f", avgConfidence)), garbled=\(String(format: "%.2f", quality.garbledRatio)), chars=\(markdown.count)")
 
