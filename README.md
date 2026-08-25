@@ -31,12 +31,13 @@ The binary is at `.build/release/parch`. Symlink it onto your PATH if you want, 
 
 ## Conversion engines
 
-parch has two conversion engines. Auto mode (default) picks the best one per file.
+parch has three conversion engines. Auto mode (default) runs Vision first and, when its output is poor, retries with the engine suited to the document: marker for digital PDFs, ovis for scanned ones.
 
 | Engine | Dependencies | Speed | Best for |
 |--------|--------------|-------|----------|
 | **vision** | None (system framework) | ~1s/page | Text-heavy docs, reports, papers |
 | **marker** | conda + marker-pdf | ~30s/page with MPS | Slides, complex tables, math |
+| **ovis** | conda + OvisOCR2 model | ~12-19s/page on MPS | Scanned docs with tables/math/structure |
 
 ### Vision (default)
 
@@ -65,13 +66,41 @@ parch auto-detects conda in standard locations (`/opt/homebrew/bin/conda`, `~/mi
 
 **Known issue on Apple Silicon:** surya-ocr (used by marker) has an MPS bug that crashes on certain tensor shapes. If you hit it, patch `.max().item()` call sites in the env's surya install to use `.cpu().max().item()` -- see [surya#493](https://github.com/VikParuchuri/surya/pull/493).
 
+### Ovis (optional, explicit only)
+
+Uses [OvisOCR2](https://huggingface.co/ATH-MaaS/OvisOCR2), a 0.9B end-to-end page-image-to-markdown model (Apache 2.0, Qwen3.5-0.8B base). It always OCRs the rendered page, so its niche is scanned documents: on those it matches marker's structure quality (HTML tables, LaTeX formulas, code blocks) at roughly a third of marker's wall time. Auto mode uses it as the fallback for scanned documents when the `ovis` conda env is installed; it can also be requested directly with `--engine ovis`. It is never given documents where Vision finds no text at all — on pure-image pages it fabricates text instead of failing.
+
+Measured on an M3 Max (2026-08-23), single dense page with code, a table, and math:
+
+| Engine | Digital PDF (text layer) | Scanned page image |
+|--------|--------------------------|--------------------|
+| vision | ~0.5s, flat text, OCR dropouts | ~0.6s, same limits |
+| marker | ~13s, exact (reads text layer) | ~61s, full structure |
+| ovis   | ~18s, full structure | ~19s, full structure |
+
+Plus ~7s model load per invocation for ovis. On digital PDFs marker is both faster and exact (it reads the text layer), so ovis earns its keep only where OCR is unavoidable. Being an LLM it can occasionally drop a character in dense code (observed: a `%` in a `sprintf` format string), where marker's OCR was exact.
+
+The table shows engine-vs-engine numbers at normal priority. parch runs its Python engines at background priority (`nice -n 20` plus background QoS) so conversions never fight the foreground; on the same scanned page that cost ovis 3.3x wall time (85s vs 25s through the identical worker). Marker pays the same policy penalty, so the relative ordering holds.
+
+To enable:
+
+```sh
+conda create -n ovis python=3.12 -y
+conda run -n ovis pip install torch torchvision transformers accelerate pillow pypdfium2
+```
+
+The ~1.7GB model downloads from Hugging Face on first run. The Python worker script is embedded in the parch binary and written to `~/.parch/ovis_convert.py` at runtime, so there is nothing else to install. Runs on MPS (Apple Silicon GPU) automatically, falling back to CPU.
+
+Two decode-loop guards are built into the worker (greedy decoding can repeat a paragraph forever on some pages): a repeat-detecting stopping criterion during generation, and block-level dedup plus the model card's character-level cleaner afterwards. Known trade-off: the stopping criterion can truncate a pathologically repetitive page (e.g. a form of many identical blank rows), since an exact 128-token repeat is indistinguishable from a decode loop mid-generation. The worker also pins both end-of-turn token ids explicitly — the upstream repo ships no `generation_config.json` and its config-level EOS differs from the chat template's, which otherwise sends every page into a runaway loop.
+
 ### Auto mode logic
 
 1. Try Vision first
 2. Vision writes `.vision-quality.json` sidecar with confidence score, character count, and garble ratio
-3. If quality is acceptable (confidence ≥ 0.5, garble ratio ≤ 0.3, ≥ 100 chars/page), keep Vision output
-4. If quality is poor **and** marker is available, delete Vision output and retry with marker
-5. If marker isn't installed, Vision output is kept regardless
+3. If Vision found no text at all, mark the file failed. There is nothing to transcribe — and no fallback runs, because ovis fabricates plausible text for pure-image pages instead of failing (see `deep-dive/ovis-canary-devon-2026-08-24.md`)
+4. If quality is acceptable (confidence ≥ 0.5, garble ratio ≤ 0.3, ≥ 100 chars/page), keep Vision output
+5. If quality is poor, retry with the engine suited to the document class: documents with a real text layer go to marker (exact, fast); scanned documents (no text layer) go to ovis (faithful structure at a third of marker's OCR time). Whichever of the two is installed covers for the other
+6. If neither fallback is installed, Vision output is kept regardless
 
 ## Usage
 
@@ -82,7 +111,8 @@ parch run                          # scan default roots, convert up to 50 pendin
 parch run --limit 200              # convert more per run
 parch run --engine vision          # Vision only, never marker
 parch run --engine marker          # marker only, requires conda setup
-parch run --engine auto            # default: Vision primary, marker fallback
+parch run --engine ovis            # OvisOCR2 only, requires conda setup; best for scans
+parch run --engine auto            # default: Vision primary; marker/ovis fallback by document class
 parch run --root ~/Dropbox/Papers  # custom scan root
 parch run --scan-only              # index without converting
 ```

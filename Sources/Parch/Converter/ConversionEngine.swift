@@ -6,6 +6,7 @@ import Logging
 enum Engine: String, Codable, Sendable {
     case vision
     case marker
+    case ovis
 }
 
 /// The user's engine preference from the CLI.
@@ -13,12 +14,14 @@ enum EngineChoice: String, CaseIterable, ExpressibleByArgument, Sendable {
     case auto
     case vision
     case marker
+    case ovis
 }
 
 /// Shared error type for all conversion engines.
 enum ConversionError: Error {
     case condaNotFound(String)
     case markerFailed(exitCode: Int32, stderr: String)
+    case ovisFailed(exitCode: Int32, stderr: String)
     case outputNotCreated(String)
     case visionFailed(String)
 }

@@ -17,7 +17,7 @@ struct ConvertFile: AsyncParsableCommand {
     @Option(name: .long, help: "Conda environment containing marker-pdf")
     var condaEnv: String = "marker"
 
-    @Option(name: .long, help: "Conversion engine: auto, vision, or marker")
+    @Option(name: .long, help: "Conversion engine: auto, vision, marker, or ovis")
     var engine: EngineChoice = .auto
 
     mutating func run() async throws {
@@ -69,7 +69,7 @@ struct ConvertFile: AsyncParsableCommand {
         let orchestrator = Orchestrator(
             db: db,
             primaryEngine: primary,
-            fallbackEngine: fallback,
+            fallbackPolicy: fallback,
             logger: logger,
             maxWorkers: 1
         )

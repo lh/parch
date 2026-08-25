@@ -22,7 +22,7 @@ struct Run: AsyncParsableCommand {
     @Option(name: .long, help: "Conda environment containing marker-pdf")
     var condaEnv: String = "marker"
 
-    @Option(name: .long, help: "Conversion engine: auto, vision, or marker")
+    @Option(name: .long, help: "Conversion engine: auto, vision, marker, or ovis")
     var engine: EngineChoice = .auto
 
     @Option(name: .long, parsing: .upToNextOption, help: "Directories to scan (default: ~/Documents ~/Code)")
@@ -56,7 +56,7 @@ struct Run: AsyncParsableCommand {
 
         // Phase 2: convert
         let (primary, fallback) = EngineFactory.make(choice: engine, condaEnv: condaEnv, logger: logger)
-        let orchestrator = Orchestrator(db: db, primaryEngine: primary, fallbackEngine: fallback, logger: logger, maxWorkers: workers)
+        let orchestrator = Orchestrator(db: db, primaryEngine: primary, fallbackPolicy: fallback, logger: logger, maxWorkers: workers)
         print("Converting pending PDFs (limit: \(limit), workers: \(workers))...")
         let convertResult = await orchestrator.convertPending(limit: limit)
         print("Convert: \(convertResult.converted) done, \(convertResult.deduplicated) deduped, \(convertResult.failed) failed, \(convertResult.skipped) skipped")

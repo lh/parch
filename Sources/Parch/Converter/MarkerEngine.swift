@@ -9,14 +9,14 @@ final class MarkerEngine: ConversionEngine, Sendable {
     private let logger: Logger
 
     init(condaEnv: String = "marker", logger: Logger) {
-        self.condaPath = Self.findConda()
+        self.condaPath = CondaLocator.find()
         self.condaEnv = condaEnv
         self.logger = logger
     }
 
     /// Whether conda and the marker environment appear to be installed.
-    static func isAvailable() -> Bool {
-        FileManager.default.fileExists(atPath: findConda())
+    static func isAvailable(condaEnv: String = "marker") -> Bool {
+        CondaLocator.envExists(condaEnv)
     }
 
     /// Convert a single PDF to markdown using marker_single via conda.
@@ -69,26 +69,5 @@ final class MarkerEngine: ConversionEngine, Sendable {
         }
 
         return outputDir
-    }
-
-    // MARK: - Conda discovery
-
-    private static func findConda() -> String {
-        let candidates = [
-            "/opt/homebrew/bin/conda",
-            "/usr/local/bin/conda",
-            FileManager.default.homeDirectoryForCurrentUser
-                .appendingPathComponent("miniforge3/bin/conda").path,
-            FileManager.default.homeDirectoryForCurrentUser
-                .appendingPathComponent("miniconda3/bin/conda").path,
-            FileManager.default.homeDirectoryForCurrentUser
-                .appendingPathComponent("anaconda3/bin/conda").path,
-        ]
-        for path in candidates {
-            if FileManager.default.fileExists(atPath: path) {
-                return path
-            }
-        }
-        return candidates[0]
     }
 }
