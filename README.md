@@ -129,7 +129,22 @@ parch convert --path ~/x     # convert only files under a path
 
 ### Skip a directory
 
-Drop a file called `.nomarker` in any directory. parch will skip that directory and its descendants.
+Drop a file called `.nomarker` in any directory. parch skips that directory and
+its descendants — useful for repositories whose PDFs are test fixtures rather
+than documents.
+
+The exclusion is retroactive. The next scan also prunes anything already in the
+index that now sits under the marker, so adding `.nomarker` to a directory parch
+has already worked on stops the pending conversions rather than only preventing
+new ones. `parch run` reports what it dropped:
+
+```
+Scan: 812 found, 0 new, 0 updated, 216 pruned
+```
+
+Pruning removes index entries, not files. Conversions parch already wrote stay
+on disk; delete those yourself if you want them gone. Removing the marker lets
+the next scan rediscover the directory from scratch.
 
 ### Source files take priority
 

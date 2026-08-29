@@ -6,6 +6,7 @@ struct ScanResult: Sendable {
     var new: Int = 0
     var updated: Int = 0
     var skipped: Int = 0
+    var pruned: Int = 0
 }
 
 final class Scanner: Sendable {
@@ -21,13 +22,20 @@ final class Scanner: Sendable {
 
     func scan() throws -> ScanResult {
         var result = ScanResult()
+        var exclusions = ExclusionCache()
+
+        // Phase 0: drop indexed files that are now excluded. Discovery filters
+        // excluded paths, but filtering alone never reaches a file already in
+        // the index: nothing else revisits those rows, so a directory excluded
+        // after it was indexed would keep converting.
+        result.pruned = try pruneExcluded(&exclusions)
 
         // Phase 1: mdfind scoped to scan roots
-        let mdfindPaths = try runMdfind()
+        let mdfindPaths = try runMdfind(&exclusions)
         logger.info("mdfind returned \(mdfindPaths.count) PDFs")
 
         // Phase 2: filesystem walk for anything mdfind missed
-        let walkPaths = try walkScanRoots(excluding: Set(mdfindPaths))
+        let walkPaths = try walkScanRoots(excluding: Set(mdfindPaths), exclusions: &exclusions)
         logger.info("Filesystem walk found \(walkPaths.count) additional PDFs")
 
         let allPaths = mdfindPaths + walkPaths
@@ -48,9 +56,27 @@ final class Scanner: Sendable {
         return result
     }
 
+    // MARK: - Prune
+
+    /// Remove indexed files that now sit under an excluded directory.
+    ///
+    /// Deleting the row rather than parking it is deliberate: a row left
+    /// `pending` would be handed back by every `fetchPending` call and never
+    /// convert, starving the queue of files that can. Rows come back on their
+    /// own if the exclusion is lifted, since the next scan rediscovers them.
+    private func pruneExcluded(_ exclusions: inout ExclusionCache) throws -> Int {
+        let indexed = try db.allIndexedPaths()
+        let excluded = indexed.filter { exclusions.isExcluded(path: $0) }
+        guard !excluded.isEmpty else { return 0 }
+
+        try db.removePaths(excluded)
+        logger.info("Pruned \(excluded.count) indexed files now under an excluded directory")
+        return excluded.count
+    }
+
     // MARK: - mdfind
 
-    private func runMdfind() throws -> [String] {
+    private func runMdfind(_ exclusions: inout ExclusionCache) throws -> [String] {
         var args: [String] = []
         for root in scanRoots {
             args.append(contentsOf: ["-onlyin", root])
@@ -72,17 +98,20 @@ final class Scanner: Sendable {
 
         guard let output = String(data: data, encoding: .utf8) else { return [] }
 
-        return output
-            .split(separator: "\n")
-            .map(String.init)
-            .filter { !ScanRules.shouldSkip(path: $0) }
-            .filter { !isInsideNomarkerDirectory($0) }
-            .filter { !ScanRules.hasSourceFile(forPDF: $0) }
+        var kept: [String] = []
+        for path in output.split(separator: "\n").map(String.init) {
+            guard !exclusions.isExcluded(path: path) else { continue }
+            guard !ScanRules.hasSourceFile(forPDF: path) else { continue }
+            kept.append(path)
+        }
+        return kept
     }
 
     // MARK: - Filesystem walk
 
-    private func walkScanRoots(excluding known: Set<String>) throws -> [String] {
+    private func walkScanRoots(
+        excluding known: Set<String>, exclusions: inout ExclusionCache
+    ) throws -> [String] {
         var found: [String] = []
         let fm = FileManager.default
         let keys: [URLResourceKey] = [.isDirectoryKey, .isRegularFileKey, .isSymbolicLinkKey, .contentModificationDateKey, .fileSizeKey]
@@ -122,17 +151,23 @@ final class Scanner: Sendable {
                     continue
                 }
 
-                // Skip .nomarker directories and their descendants
+                // Skip excluded directories and their descendants. Pruning the
+                // walk here is what keeps the cost down; the per-file check
+                // below is the backstop for paths the walk never gated.
                 if values?.isDirectory == true {
-                    let nomarkerPath = fileURL.appendingPathComponent(".nomarker").path
-                    if fm.fileExists(atPath: nomarkerPath) {
-                        logger.debug("Skipping .nomarker directory: \(path)")
+                    if ScanRules.hasExclusionMarker(inDirectory: path) {
+                        logger.debug("Skipping excluded directory: \(path)")
                         enumerator.skipDescendants()
                     }
                     continue
                 }
 
+                // The directory check above prunes whole subtrees, but it only
+                // fires for directories the enumerator hands back -- never for
+                // a scan root itself. Re-check the file so a marker at the root
+                // of an explicit `--root` still excludes it.
                 if ScanRules.isPDF(path) && !known.contains(path)
+                    && !exclusions.isExcluded(path: path)
                     && !ScanRules.hasSourceFile(forPDF: path) {
                     found.append(path)
                 }
@@ -140,26 +175,6 @@ final class Scanner: Sendable {
         }
 
         return found
-    }
-
-    // MARK: - .nomarker check
-
-    /// Check if any ancestor directory contains a .nomarker file.
-    /// Used for mdfind results where we don't walk the tree ourselves.
-    private func isInsideNomarkerDirectory(_ path: String) -> Bool {
-        let fm = FileManager.default
-        var dir = (path as NSString).deletingLastPathComponent
-        let home = FileManager.default.homeDirectoryForCurrentUser.path
-
-        // Walk up to home or root, checking each directory
-        while dir.count > 1 && dir.hasPrefix(home) {
-            let marker = (dir as NSString).appendingPathComponent(".nomarker")
-            if fm.fileExists(atPath: marker) {
-                return true
-            }
-            dir = (dir as NSString).deletingLastPathComponent
-        }
-        return false
     }
 
     // MARK: - File info

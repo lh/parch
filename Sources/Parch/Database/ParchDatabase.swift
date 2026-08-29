@@ -72,6 +72,15 @@ final class ParchDatabase: Sendable {
         }
     }
 
+    /// Every indexed file path. Used by the scan's prune phase, which has to
+    /// re-test paths the index already holds rather than only what discovery
+    /// just returned.
+    func allIndexedPaths() throws -> [String] {
+        try dbQueue.read { db in
+            try String.fetchAll(db, sql: "SELECT file_path FROM indexed_pdf")
+        }
+    }
+
     // MARK: - Write
 
     /// Whether two mtimes are the same modification event. Exact equality is
@@ -216,5 +225,20 @@ final class ParchDatabase: Sendable {
         try dbQueue.write { db in
             try db.execute(sql: "DELETE FROM indexed_pdf WHERE file_path = ?", arguments: [path])
         }
+    }
+
+    /// Remove many paths in one transaction. A newly excluded directory can
+    /// account for hundreds of rows; deleting them one transaction at a time
+    /// leaves the index half-pruned if the run is interrupted partway.
+    @discardableResult
+    func removePaths(_ paths: [String]) throws -> Int {
+        guard !paths.isEmpty else { return 0 }
+        try dbQueue.write { db in
+            for path in paths {
+                try db.execute(
+                    sql: "DELETE FROM indexed_pdf WHERE file_path = ?", arguments: [path])
+            }
+        }
+        return paths.count
     }
 }

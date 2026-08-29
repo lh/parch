@@ -30,6 +30,19 @@ enum ScanRules {
         "/usr",
     ]
 
+    /// Marker file that excludes its directory and everything beneath it.
+    /// Named for the Marker engine, which was the only engine when the
+    /// mechanism was added; it now excludes a directory from parch entirely,
+    /// whichever engine would have run.
+    static let exclusionMarkerName = ".nomarker"
+
+    /// Whether `dir` itself carries an exclusion marker. Says nothing about
+    /// its ancestors -- use `ExclusionCache` to ask about a whole path.
+    static func hasExclusionMarker(inDirectory dir: String) -> Bool {
+        let marker = (dir as NSString).appendingPathComponent(exclusionMarkerName)
+        return FileManager.default.fileExists(atPath: marker)
+    }
+
     static func shouldSkip(path: String) -> Bool {
         // Skip app bundles
         if path.contains(".app/Contents") {

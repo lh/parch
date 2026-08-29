@@ -48,7 +48,7 @@ struct Run: AsyncParsableCommand {
         let scanner = Scanner(db: db, scanRoots: roots, logger: logger)
         print("Scanning for PDFs...")
         let scanResult = try scanner.scan()
-        print("Scan: \(scanResult.discovered) found, \(scanResult.new) new, \(scanResult.updated) updated")
+        print("Scan: \(scanResult.discovered) found, \(scanResult.new) new, \(scanResult.updated) updated, \(scanResult.pruned) pruned")
 
         if scanOnly {
             return
