@@ -143,7 +143,7 @@ struct ScanPruningTests {
             // Exclude the directory only now, after indexing.
             try writeFile((repo as NSString).appendingPathComponent(ScanRules.exclusionMarkerName))
 
-            let scanner = Scanner(db: db, scanRoots: [root], logger: makeLogger())
+            let scanner = Scanner(db: db, scanRoots: [root], sourceExtensions: ParchConfig.defaultSourceExtensions, logger: makeLogger())
             let result = try scanner.scan()
 
             #expect(result.pruned == 1)
@@ -167,7 +167,7 @@ struct ScanPruningTests {
             try db.upsertDiscovered(filePath: keptPDF, fileSize: 8, mtime: 1000)
             try db.upsertDiscovered(filePath: droppedPDF, fileSize: 8, mtime: 1000)
 
-            let scanner = Scanner(db: db, scanRoots: [root], logger: makeLogger())
+            let scanner = Scanner(db: db, scanRoots: [root], sourceExtensions: ParchConfig.defaultSourceExtensions, logger: makeLogger())
             let result = try scanner.scan()
 
             // Assert on membership, not on an exact path list. Where Spotlight
@@ -192,7 +192,7 @@ struct ScanPruningTests {
             try writeFile((repo as NSString).appendingPathComponent(ScanRules.exclusionMarkerName))
 
             let db = try makeDB()
-            let scanner = Scanner(db: db, scanRoots: [root], logger: makeLogger())
+            let scanner = Scanner(db: db, scanRoots: [root], sourceExtensions: ParchConfig.defaultSourceExtensions, logger: makeLogger())
 
             _ = try scanner.scan()
             #expect(try db.allIndexedPaths().isEmpty)
@@ -212,7 +212,7 @@ struct ScanPruningTests {
             try writeFile(pdf, "%PDF-1.4")
 
             let db = try makeDB()
-            let scanner = Scanner(db: db, scanRoots: [root], logger: makeLogger())
+            let scanner = Scanner(db: db, scanRoots: [root], sourceExtensions: ParchConfig.defaultSourceExtensions, logger: makeLogger())
             _ = try scanner.scan()
 
             #expect(try db.allIndexedPaths().isEmpty)

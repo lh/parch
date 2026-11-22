@@ -12,11 +12,16 @@ struct ScanResult: Sendable {
 final class Scanner: Sendable {
     private let db: ParchDatabase
     private let scanRoots: [String]
+    private let sourceExtensions: Set<String>
     private let logger: Logger
 
-    init(db: ParchDatabase, scanRoots: [String]? = nil, logger: Logger) {
+    /// `sourceExtensions` has no default on purpose: callers pass the user's
+    /// config (or, in tests, `ParchConfig.defaultSourceExtensions`)
+    /// explicitly, so nothing silently scans with a list the user replaced.
+    init(db: ParchDatabase, scanRoots: [String]? = nil, sourceExtensions: Set<String>, logger: Logger) {
         self.db = db
         self.scanRoots = scanRoots ?? ScanRules.defaultScanRoots
+        self.sourceExtensions = sourceExtensions
         self.logger = logger
     }
 
@@ -24,11 +29,13 @@ final class Scanner: Sendable {
         var result = ScanResult()
         var exclusions = ExclusionCache()
 
-        // Phase 0: drop indexed files that are now excluded. Discovery filters
-        // excluded paths, but filtering alone never reaches a file already in
+        // Phase 0: drop indexed files that are now skipped. Discovery filters
+        // skipped paths, but filtering alone never reaches a file already in
         // the index: nothing else revisits those rows, so a directory excluded
-        // after it was indexed would keep converting.
-        result.pruned = try pruneExcluded(&exclusions)
+        // after it was indexed -- or a PDF whose source appeared, or whose
+        // source extension was added to the config, after it was indexed --
+        // would keep its row and keep converting.
+        result.pruned = try pruneSkipped(&exclusions)
 
         // Phase 1: mdfind scoped to scan roots
         let mdfindPaths = try runMdfind(&exclusions)
@@ -56,22 +63,49 @@ final class Scanner: Sendable {
         return result
     }
 
+    // MARK: - Skip rules
+
+    private enum SkipReason {
+        case excluded
+        case hasSourceFile
+    }
+
+    /// The single skip decision shared by pruning and both discovery paths,
+    /// so a file cannot be pruned by one phase and re-added by another.
+    private func skipReason(for path: String, _ exclusions: inout ExclusionCache) -> SkipReason? {
+        if exclusions.isExcluded(path: path) {
+            return .excluded
+        }
+        if ScanRules.hasSourceFile(forPDF: path, extensions: sourceExtensions) {
+            return .hasSourceFile
+        }
+        return nil
+    }
+
     // MARK: - Prune
 
-    /// Remove indexed files that now sit under an excluded directory.
+    /// Remove indexed files that a skip rule now applies to.
     ///
     /// Deleting the row rather than parking it is deliberate: a row left
     /// `pending` would be handed back by every `fetchPending` call and never
     /// convert, starving the queue of files that can. Rows come back on their
-    /// own if the exclusion is lifted, since the next scan rediscovers them.
-    private func pruneExcluded(_ exclusions: inout ExclusionCache) throws -> Int {
-        let indexed = try db.allIndexedPaths()
-        let excluded = indexed.filter { exclusions.isExcluded(path: $0) }
-        guard !excluded.isEmpty else { return 0 }
+    /// own if the rule stops applying, since the next scan rediscovers them.
+    private func pruneSkipped(_ exclusions: inout ExclusionCache) throws -> Int {
+        var excluded: [String] = []
+        var shadowed: [String] = []
+        for path in try db.allIndexedPaths() {
+            switch skipReason(for: path, &exclusions) {
+            case .excluded: excluded.append(path)
+            case .hasSourceFile: shadowed.append(path)
+            case nil: break
+            }
+        }
+        let pruned = excluded + shadowed
+        guard !pruned.isEmpty else { return 0 }
 
-        try db.removePaths(excluded)
-        logger.info("Pruned \(excluded.count) indexed files now under an excluded directory")
-        return excluded.count
+        try db.removePaths(pruned)
+        logger.info("Pruned \(pruned.count) indexed files: \(excluded.count) under an excluded directory, \(shadowed.count) with a sibling source file")
+        return pruned.count
     }
 
     // MARK: - mdfind
@@ -100,8 +134,7 @@ final class Scanner: Sendable {
 
         var kept: [String] = []
         for path in output.split(separator: "\n").map(String.init) {
-            guard !exclusions.isExcluded(path: path) else { continue }
-            guard !ScanRules.hasSourceFile(forPDF: path) else { continue }
+            guard skipReason(for: path, &exclusions) == nil else { continue }
             kept.append(path)
         }
         return kept
@@ -167,8 +200,7 @@ final class Scanner: Sendable {
                 // a scan root itself. Re-check the file so a marker at the root
                 // of an explicit `--root` still excludes it.
                 if ScanRules.isPDF(path) && !known.contains(path)
-                    && !exclusions.isExcluded(path: path)
-                    && !ScanRules.hasSourceFile(forPDF: path) {
+                    && skipReason(for: path, &exclusions) == nil {
                     found.append(path)
                 }
             }

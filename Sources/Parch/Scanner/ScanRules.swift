@@ -71,15 +71,22 @@ enum ScanRules {
         path.lowercased().hasSuffix(".pdf")
     }
 
-    /// Skip PDFs that have a sibling source file -- no point converting
-    /// a PDF back to markdown when the original source is right there.
-    private static let sourceExtensions = ["tex", "md", "markdown", "typ", "rst", "rmd"]
-
-    static func hasSourceFile(forPDF pdfPath: String) -> Bool {
-        let url = URL(fileURLWithPath: pdfPath)
-        let stem = url.deletingPathExtension()
-        for ext in sourceExtensions {
-            if FileManager.default.fileExists(atPath: stem.appendingPathExtension(ext).path) {
+    /// Whether the PDF has a same-stem sibling with one of `extensions` --
+    /// no point converting a PDF back to markdown when the original source is
+    /// right there. Only the same stem counts: a `.tex` elsewhere in the
+    /// directory is as likely to be a document that includes this PDF as a
+    /// figure, or one that cites it, as the PDF's own source.
+    ///
+    /// The candidate is built by string concatenation rather than
+    /// `URL.appendingPathExtension`, and must be a regular file, so that no
+    /// extension can resolve to the conversion output directory (the bare
+    /// stem) and shadow every converted PDF.
+    static func hasSourceFile(forPDF pdfPath: String, extensions: Set<String>) -> Bool {
+        let stem = (pdfPath as NSString).deletingPathExtension
+        let fm = FileManager.default
+        for ext in extensions where !ext.isEmpty {
+            var isDirectory: ObjCBool = false
+            if fm.fileExists(atPath: stem + "." + ext, isDirectory: &isDirectory), !isDirectory.boolValue {
                 return true
             }
         }

@@ -34,6 +34,11 @@ struct Run: AsyncParsableCommand {
         Self.rotateLogIfNeeded()
         let logger = makeLogger(level: verbose ? .debug : .info)
 
+        // Load the config before touching the lock or the index, so a broken
+        // file fails the run with no side effects rather than half-way through.
+        let config = try ParchConfig.load()
+        logger.debug("Source extensions: \(config.sourceExtensions.sorted().joined(separator: ", "))")
+
         guard let lock = ProcessLock.acquire() else {
             // Lock held by another parch run — silently exit. This is expected
             // when WatchPaths fires while a previous run is still going.
@@ -45,7 +50,8 @@ struct Run: AsyncParsableCommand {
 
         // Phase 1: scan
         let roots = root.isEmpty ? nil : root
-        let scanner = Scanner(db: db, scanRoots: roots, logger: logger)
+        let scanner = Scanner(
+            db: db, scanRoots: roots, sourceExtensions: config.sourceExtensions, logger: logger)
         print("Scanning for PDFs...")
         let scanResult = try scanner.scan()
         print("Scan: \(scanResult.discovered) found, \(scanResult.new) new, \(scanResult.updated) updated, \(scanResult.pruned) pruned")

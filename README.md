@@ -148,7 +148,23 @@ the next scan rediscover the directory from scratch.
 
 ### Source files take priority
 
-parch automatically skips PDFs that have a sibling `.tex`, `.md`, `.markdown`, `.typ`, `.rst`, or `.rmd` file with the same name. No point converting a PDF back to markdown when the original source is right there.
+parch skips a PDF that has a source file beside it with the same name: `report.pdf` next to `report.tex` is not converted, because the original is already readable. The default source extensions are `.tex`, `.md`, `.markdown`, `.typ`, `.rst`, `.rmd` and `.qmd`.
+
+Only the same name counts. A PDF that merely shares a directory with a `.tex` file is still converted, since it is as likely to be a figure the document includes, or a paper it cites, as the document's own output.
+
+Like `.nomarker`, the rule is retroactive: each scan also prunes indexed PDFs that a source file now shadows, whether the source appeared after the PDF was indexed or its extension was added to the list since. The prune count in `Scan: ... pruned` covers both rules; the accompanying log line says how many each one dropped. Conversions already written stay on disk.
+
+To change the list, create `~/.parch/config.json`:
+
+```json
+{
+  "sourceExtensions": ["tex", "md", "typ", "qmd", "org"]
+}
+```
+
+The list **replaces** the defaults rather than adding to them, so include every extension you want; `[]` turns the rule off. Entries are case-insensitive and a leading dot is optional. Each machine reads its own file.
+
+parch refuses to run with a config it cannot use, rather than falling back to the defaults: invalid JSON, an unknown key (a typo would otherwise leave the defaults silently in force), or an entry that is empty, contains a dot, slash or space, or is `pdf` (which would make every PDF its own source and prune the whole index).
 
 ## Running as a background service
 
