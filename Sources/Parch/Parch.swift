@@ -8,7 +8,7 @@ struct Parch: AsyncParsableCommand {
         abstract: "Background PDF-to-markdown indexer",
         // Bump alongside an annotated git tag so a deployed binary can be
         // traced back to a commit.
-        version: "0.2.0",
+        version: "0.3.0",
         subcommands: [
             Status.self,
             ListPending.self,
